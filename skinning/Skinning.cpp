@@ -1286,6 +1286,7 @@ void Skinning::display()
   /////////////////////////////////////////////////////////////////////////////
   if(virgin_display)
   {
+    draw_anttweakbar = true;
     initialize_shaders();
     virgin_display = false;
     display_count = 0;
