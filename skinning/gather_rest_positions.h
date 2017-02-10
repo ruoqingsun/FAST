@@ -24,9 +24,11 @@ inline bool gather_rest_positions(
   int num_handles = C.rows();
 
   std::vector<Bone*> B = gather_bones(BR);
+  int i = 0;
   // loop over bones
   for(std::vector<Bone*>::iterator bit = B.begin();bit != B.end();bit++)
   {
+    i++;
     Bone * b = (*bit);
     if(b->wi_is_set())
     {
@@ -47,6 +49,8 @@ inline bool gather_rest_positions(
       }
     }
   }
-
+    
+    std::cout<<"C=["<<C<<"];"<<std::endl;
+    std::cout<<"i=["<<i<<"];"<<std::endl;
   return true;
 }

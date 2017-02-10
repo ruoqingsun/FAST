@@ -123,6 +123,43 @@ void gather_fixed_constraints_system(
   A_fix_eq.makeCompressed();
 }
 
+void gather_barycenter_constraints_system(
+  const LbsMatrixType M,    //
+  const int vNum,
+  const int m, //number of handles (17)
+  const int dim,    //number of dimensions(3)
+  Eigen::SparseMatrix<double> & A_eq)
+{
+    int wNum = M.cols();
+    Eigen::MatrixXd M_center(3,wNum);
+    
+    for(int i = 0; i < vNum; i++)
+    {
+        for(int j = 0; j < wNum; j++)
+        {
+            M_center(0, j) += M(i+vNum*0, j);
+            M_center(1, j) += M(i+vNum*2, j);
+            M_center(2, j) += M(i+vNum, j);
+            
+//            M_center(0, j) += M(i * 3, j);
+//            M_center(1, j) += M(i * 3 + 1, j);
+        }
+    }
+    
+    std::vector<Eigen::Triplet<double> > A_eq_IJV;
+    for(int i = 0; i < 3; i++)
+    {
+        for(int j = 0; j < wNum; j++)
+        {
+            A_eq_IJV.push_back(Eigen::Triplet<double>(i,j,M_center(i, j)));
+        }
+    }
+    
+    A_eq.resize(3,wNum);
+    A_eq.setFromTriplets(A_eq_IJV.begin(),A_eq_IJV.end());
+    A_eq.makeCompressed();
+}
+
 void join_constraints_systems(
   const Eigen::SparseMatrix<double> & A1, 
   const Eigen::SparseMatrix<double> & A2, 

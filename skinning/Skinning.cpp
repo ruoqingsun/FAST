@@ -258,6 +258,12 @@ using namespace Eigen;
 #include "render_spheres.h"
 #endif
 
+#include "Bone.h"
+#include <vector>
+#include <list>
+#include "gather_bones.h"
+
+
 Skinning::Skinning():
   texture_id(0),
   use_cpu(false),
@@ -333,7 +339,7 @@ use_texture_mapping(false),
     collisions_K = 0.5;
     collisions_param = 0.0;
     collisions_p = 1.1;
-    water_instead_of_floor = false;
+    water_instead_of_floor = falMse;
     water_color[0] = 0.5;
     water_color[1] = 0.5;
     water_color[2] = 1.0;
@@ -520,6 +526,17 @@ void Skinning::initialize_skeleton()
       &Skinning::after_skeleton_set_editing, 
       this,
       std::placeholders::_1);
+}
+
+void DrawCircle(float x, float y, float r, int segments)
+{
+    glBegin( GL_TRIANGLE_FAN );
+    glVertex2f(x, y);
+    for( int n = 0; n <= segments; ++n ) {
+        float const t = 2 * M_PI * (float)n / (float)segments;
+        glVertex2f(x + sin(t) * r, y + cos(t) * r);
+    }
+    glEnd();
 }
 
 void Skinning::initialize_display()
@@ -1360,6 +1377,15 @@ void Skinning::display()
   {
     clear();
   }
+   
+    glDisable(GL_LIGHTING);
+    glBegin(GL_TRIANGLES);
+    glColor4f(1.0f,0.0f,0.0f,1.0f);
+    glVertex3f(0.5,0,0.0);
+    glVertex3f(0,0.5,0.0);
+    glVertex3f(0,0,0.5);
+    glEnd();
+    glEnable(GL_LIGHTING);
 
 #ifdef DRAW_PROFILING
 glFinish();
@@ -1491,6 +1517,11 @@ for (int i=0; i<numReps; i++)
         MatrixXf Tcol;
         igl::columnize(T.block(0,0,dim,T.cols()).eval(),T.cols()/4,2,Tcol);
         MatrixXd U3 = M*Tcol.cast<double>().eval();
+          
+          std::cout<<"U3: "<<endl<<U3.rows()<<" * "<<U3.cols()<<std::endl;
+          std::cout<<"Tcol: "<<endl<<Tcol.rows()<<" * "<<U3.cols()<<std::endl;
+          std::cout<<"T: "<<endl<<T.rows()<<" * "<<T.cols()<<std::endl;
+          
         cpuV.resize(V.rows(),V.cols());
         cpuV.col(0) = U3.block(0,0,V.rows(),1);
         cpuV.col(1) = U3.block(V.rows(),0,V.rows(),1);
@@ -1742,7 +1773,24 @@ printf("Draw time = %fms\n", (sec_end - sec_start)*1000.0 / numReps);
     start_seconds = get_seconds();
     display_count = 0;
   }
+    
+    std::cout<<"&&&&&&&&&&&&&&&&&Draw Circle"<<std::endl;
+    
+//    glColor3f(1.0,0.0,0.0);
+//    glClearColor(1.0, 0, 0, 1.0);
+//    glBegin(GL_TRIANGLES);
+//    glColor4f(1.0f,0.0f,0.0f,1.0f);
+//    glVertex3f(0.5,0,0.0);
+//    glVertex3f(0,0.5,0.0);
+//    glVertex3f(0,0,0.5);
+//    glEnd();
+    
   glFlush();
+    
+    
+    //    glColor3i(255, 255, 0);
+//    DrawCircle(100, 100, 100, );
+    
   if(render_once || 
     (render_animation_to_tga && (animating || (display_crowd && play_animation))))
   {
@@ -2947,8 +2995,6 @@ bool Skinning::transformations()
 //  deform_spheres(spheres,T.cast<double>().eval());
 //#endif
 
-
-
   if(auto_dof && !bypass_auto_dof)
   {
     // number of handles
@@ -2964,6 +3010,8 @@ bool Skinning::transformations()
     // number of dimensions
     int dim = arap_dof.dim;
     Matrix<double,Dynamic,1> B_eq;
+//      cout<<"m: "<<m<<endl;
+//      cout<<"dim: "<<dim<<endl;
     gather_positional_constraints_rhs(skel->roots,m,dim,B_eq);
     // Gather transformations into a column
     MatrixXf Tcol;
@@ -3016,6 +3064,8 @@ bool Skinning::transformations()
       if(arap_dof.with_dynamics)
       {
 #ifdef PBS_KAAN
+          
+//          cout<<"PBS_KAAN is defined"<<endl;
         if(collide_with_floor)
         {
           if(naive_floor)
@@ -3034,12 +3084,57 @@ bool Skinning::transformations()
           arap_dof.fext.setZero();
         }
 #else
+//          cout<<"PBS_KAAN is not defined"<<endl;
         arap_dof.fext.setZero();
 #endif
       }
+    
+        double buff = 1;
+        update_times += buff;
+        double time_degree = update_times*0.01;
+        
+        if(time_degree>=3.14/2.0 || time_degree<=0){
+            buff *= -1;
+        }
+        
+//        B_eq(3*1+0) -= cos(time_degree) * 10;
+//        B_eq(3*1+1) -= sin(time_degree) * 10;
+//        
+//        B_eq(3*2+0) += cos(time_degree) * 10;
+//        B_eq(3*2+1) -= sin(time_degree) * 10;
+//        
+//        B_eq(3*3+0) -= cos(time_degree) * 10;
+//        B_eq(3*3+1) -= sin(time_degree) * 10;
+//        
+//        B_eq(3*4+0) += cos(time_degree) * 10;
+//        B_eq(3*4+1) -= sin(time_degree) * 10;
+        
+        int num_pc = B_eq.rows();
+        B_eq.conservativeResize(num_pc + 3);
+        
+//        B_eq(num_pc) = cos(time_degree) * V.rows() * 0.5;
+//        B_eq(num_pc+1) = (0.57 + sin(time_degree) * 0.5)* V.rows();
+        
+        B_eq(num_pc) = 0 * V.rows() * 0.5;
+        B_eq(num_pc+1) = 0.57 * V.rows();
+        B_eq(num_pc+2) = -1 * V.rows();
+        
+        bool update_success = arap_dof_update(arap_dof,B_eq,L0,max_iters,tol,L);
+        
+//                cout<<"B_eq update"<<B_eq.rows()<<" * "<<B_eq.cols()<<endl;
+//                cout<<"B_eq:["<<B_eq<<"]"<<endl;
 
-      bool update_success = arap_dof_update(arap_dof,B_eq,L0,max_iters,tol,L);
+//        int dim = V.cols();
+//        MatrixXf Tcol;
+//        igl::columnize(T.block(0,0,dim,T.cols()).eval(),T.cols()/4,2,Tcol);
+//        MatrixXd U3 = M*Tcol.cast<double>().eval();
+//        
+//        std::cout<<"U3: "<<endl<<U3.rows()<<" * "<<U3.cols()<<std::endl;
+//        std::cout<<"Tcol: "<<endl<<Tcol.rows()<<" * "<<U3.cols()<<std::endl;
+//        std::cout<<"T: "<<endl<<T.rows()<<" * "<<T.cols()<<std::endl;
 
+        
+        
       if(!update_success)
       {
         return false;
@@ -3271,6 +3366,7 @@ bool Skinning::initialize_weights()
     MAX_NUM_WEIGHTS_PER_VERTEX,
     pow(10,sort_weights_epsilon_power),
     W,WI);
+    
 #ifdef EXTREME_VERBOSE
   cout<<"W=["<<endl<<W<<endl<<"];"<<endl;
   cout<<"WI=["<<endl<<WI<<endl<<"];"<<endl;
@@ -3567,13 +3663,32 @@ bool Skinning::compute_extra_weights()
   return true;
 }
 
+void printSkelNum(const std::vector<Bone*> & BR)
+{
+    std::vector<Bone*> B = gather_bones(BR);
+    int i = 0;
+    // loop over bones
+    for(std::vector<Bone*>::iterator bit = B.begin();bit != B.end();bit++)
+    {
+        i++;
+//        Bone * b = (*bit);
+    }
+    cout<<"Skeleton Num: "<<i<<endl;
+}
+
+
 bool Skinning::initialize_auto_dof()
 {
   // Default is to not accept
   auto_dof = false;
+    
+    update_times = 0;
 
   // TODO: should verify that everything's already initialized and if so just
   // return true and continue
+
+//    cout<<1<<endl;
+//  printSkelNum(skel->roots);
 
   // Compute extra weights into TW
   // resort W,WI
@@ -3589,7 +3704,14 @@ bool Skinning::initialize_auto_dof()
     std::cout<<"No extra weights..."<<std::endl;
     EW.resize(V.rows(),0);
   }
+    
+//    cout<<2<<endl;
+//  printSkelNum(skel->roots);
+    
   initialize_weights();
+    
+//    cout<<3<<endl;
+//  printSkelNum(skel->roots);
 
   // Gather original weights and extra weights
   Eigen::MatrixXd TW;
@@ -3624,6 +3746,10 @@ bool Skinning::initialize_auto_dof()
   // Gather rest positions
   MatrixXd C(num_handles,dim);
   bool gather_success = gather_rest_positions(skel->roots,C);
+    
+//    cout<<4<<endl;
+//    printSkelNum(skel->roots);
+    
 #ifdef EXTREME_VERBOSE
   cout<<"C=["<<C<<"];"<<endl;
 #endif
@@ -3650,8 +3776,11 @@ bool Skinning::initialize_auto_dof()
       k);
     num_groups = k;
   }
+    //#W list of group indices (1 to k) for each vertex, such that vertex i is assigned to group G(i)
   Matrix<int,Dynamic,1> G;
+    //k list of seed vertices
   Matrix<int,Dynamic,1> S;
+    //#W list of squared distances for each vertex to it's corresponding closed seed
   Matrix<double,Dynamic,1> GD;
   // Use original weights for partitioning
   /***/printf("partition()\n");
@@ -3711,6 +3840,7 @@ bool Skinning::reinitialize_auto_dof()
   // Gather rest positions
   MatrixXd C(m,dim);
   bool gather_success = gather_rest_positions(skel->roots,C);
+//  cout<<"C=["<<C<<"];"<<endl;
 #ifdef EXTREME_VERBOSE
   cout<<"C=["<<C<<"];"<<endl;
 #endif
@@ -3760,11 +3890,23 @@ bool Skinning::reinitialize_auto_dof()
   }
   // Linear positional constraints system
   /***/printf("gather_positional_constraints_system()\n");
-  SparseMatrix<double> A_eq, A_fix_eq;
+  SparseMatrix<double> A_eq, A_fix_eq, A_center_eq;
   gather_positional_constraints_system(skel->roots,m,dim,A_eq);
   gather_fixed_constraints_system(fixed_dim, dim, m, A_fix_eq);
-  SparseMatrix<double> A_eq_merged;
-  join_constraints_systems(A_eq, A_fix_eq, A_eq_merged);
+  gather_barycenter_constraints_system(M, V.rows(), m, dim, A_center_eq);
+    
+    cout<<"A_eq: "<<A_eq.rows()<<" * "<<A_eq.cols()<<endl;
+    cout<<"A_fix_eq: "<<A_fix_eq.rows()<<" * "<<A_fix_eq.cols()<<endl;
+    cout<<"A_center_eq: "<<A_center_eq.rows()<<" * "<<A_center_eq.cols()<<endl;
+//    cout<<"A_center_eq: "<<A_center_eq<<endl;
+
+  SparseMatrix<double> A_eq_merged_part, A_eq_merged;
+    
+//    join_constraints_systems(A_eq, A_fix_eq, A_eq_merged);
+  join_constraints_systems(A_eq, A_fix_eq, A_eq_merged_part);
+  join_constraints_systems(A_eq_merged_part, A_center_eq, A_eq_merged);
+    
+    cout<<"A_eq_merged: "<<A_eq_merged.rows()<<endl;
 #ifdef EXTREME_VERBOSE
   cout << "A_eq_merged=[" << endl << A_eq_merged << "]+1;" << endl;
 #endif
@@ -3973,3 +4115,5 @@ void Skinning::sphere_constructor()
     damage = true;
 }
 #endif
+
+

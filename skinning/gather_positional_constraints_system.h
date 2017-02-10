@@ -10,6 +10,9 @@
 #include <Eigen/Sparse>
 #include <iostream>
 
+//typedef Eigen::SparseMatrix<double> LbsMatrixType;
+typedef Eigen::MatrixXd LbsMatrixType;
+
 // Gather positional constraints system entries implied by bone forest
 //
 // Inputs:
@@ -62,6 +65,14 @@ void gather_fixed_constraints_system(
   int dim, 
   int numBones, 
   Eigen::SparseMatrix<double> & A_fix_eq);
+
+//gather constraints for center of mass
+void gather_barycenter_constraints_system(
+  const LbsMatrixType M,
+  const int vNum,
+  const int m,
+  const int dim,
+  Eigen::SparseMatrix<double> & A_eq);
 
 // creates 'A_fix_eq matrix' corresponding to one-variable constraints
 // specified by fixed transformations 'fixed':
