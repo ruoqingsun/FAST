@@ -147,6 +147,13 @@ using namespace SkinningCallback;
 //#define SKINNING_PROFILING
 //#define DRAW_PROFILING
 
+//Kinect
+#include <XnCppWrapper.h>
+#define SAMPLE_XML_PATH "/Users/ruoqing/Downloads/OpenNI-master 2/Data/SamplesConfig.xml"
+#define SAMPLE_XML_PATH_LOCAL "SamplesConfig.xml"
+#define MAX_NUM_USERS 1
+//Kinect(end)
+
 #define OPTIMIZE_INDEX_BUFFER
 
 using namespace std;
@@ -263,6 +270,16 @@ using namespace Eigen;
 #include <list>
 #include "gather_bones.h"
 
+//global variables for Kinect
+xn::Context g_Context;
+xn::ScriptNode g_scriptNode;
+xn::UserGenerator g_UserGenerator;
+XnBool g_bNeedPose;
+XnChar g_strPose[20];
+bool kinect_mode;
+bool kinect_position_track;
+Matrix<float,3,1> kinect_characterP;
+Matrix<float,3,1> kinect_originalP;
 
 Skinning::Skinning():
   texture_id(0),
@@ -353,6 +370,8 @@ use_texture_mapping(false),
     
   initialize_skeleton();
   initialize_display();
+    preinitialize_kinect();
+    initialize_kinect();
 #ifndef NO_PUPPET
   initialize_puppet();
 #endif
@@ -367,7 +386,6 @@ use_texture_mapping(false),
     destroy_bone_roots(skel->roots);
   }
 #endif
-    
 }
 
 Skinning::~Skinning()
@@ -390,6 +408,7 @@ Skinning::~Skinning()
 #endif
   delete skel;
   deinitialize_shaders();
+  release_kinect();
 }
 
 // Default names
@@ -603,9 +622,174 @@ void Skinning::initialize_display()
   corner_threshold = 20;
 }
 
+XnBool fileExists(const char *fn)
+{
+    XnBool exists;
+    xnOSDoesFileExist(fn, &exists);
+    return exists;
+}
+
+void Skinning::preinitialize_kinect()
+{
+    g_bNeedPose = FALSE;
+    strcpy(g_strPose, "");
+    kinect_mode = false;
+    kinect_position_track = false;
+}
+
+
+// Callback: New user was detected
+void XN_CALLBACK_TYPE User_NewUser(xn::UserGenerator& /*generator*/, XnUserID nId, void* /*pCookie*/)
+{
+    XnUInt32 epochTime = 0;
+    xnOSGetEpochTime(&epochTime);
+    printf("%d New User %d\n", epochTime, nId);
+    // New user found
+    if (g_bNeedPose)
+    {
+        g_UserGenerator.GetPoseDetectionCap().StartPoseDetection(g_strPose, nId);
+    }
+    else
+    {
+        g_UserGenerator.GetSkeletonCap().RequestCalibration(nId, TRUE);
+    }
+}
+// Callback: An existing user was lost
+void XN_CALLBACK_TYPE User_LostUser(xn::UserGenerator& /*generator*/, XnUserID nId, void* /*pCookie*/)
+{
+    XnUInt32 epochTime = 0;
+    xnOSGetEpochTime(&epochTime);
+    printf("%d Lost user %d\n", epochTime, nId);
+}
+// Callback: Detected a pose
+void XN_CALLBACK_TYPE UserPose_PoseDetected(xn::PoseDetectionCapability& /*capability*/, const XnChar* strPose, XnUserID nId, void* /*pCookie*/)
+{
+    XnUInt32 epochTime = 0;
+    xnOSGetEpochTime(&epochTime);
+    printf("%d Pose %s detected for user %d\n", epochTime, strPose, nId);
+    g_UserGenerator.GetPoseDetectionCap().StopPoseDetection(nId);
+    g_UserGenerator.GetSkeletonCap().RequestCalibration(nId, TRUE);
+}
+// Callback: Started calibration
+void XN_CALLBACK_TYPE UserCalibration_CalibrationStart(xn::SkeletonCapability& /*capability*/, XnUserID nId, void* /*pCookie*/)
+{
+    XnUInt32 epochTime = 0;
+    xnOSGetEpochTime(&epochTime);
+    printf("%d Calibration started for user %d\n", epochTime, nId);
+}
+
+void XN_CALLBACK_TYPE UserCalibration_CalibrationComplete(xn::SkeletonCapability& /*capability*/, XnUserID nId, XnCalibrationStatus eStatus, void* /*pCookie*/)
+{
+    XnUInt32 epochTime = 0;
+    xnOSGetEpochTime(&epochTime);
+    if (eStatus == XN_CALIBRATION_STATUS_OK)
+    {
+        // Calibration succeeded
+        printf("%d Calibration complete, start tracking user %d\n", epochTime, nId);
+        g_UserGenerator.GetSkeletonCap().StartTracking(nId);
+    }
+    else
+    {
+        // Calibration failed
+        printf("%d Calibration failed for user %d\n", epochTime, nId);
+        if(eStatus==XN_CALIBRATION_STATUS_MANUAL_ABORT)
+        {
+            printf("Manual abort occured, stop attempting to calibrate!");
+            return;
+        }
+        if (g_bNeedPose)
+        {
+            g_UserGenerator.GetPoseDetectionCap().StartPoseDetection(g_strPose, nId);
+        }
+        else
+        {
+            g_UserGenerator.GetSkeletonCap().RequestCalibration(nId, TRUE);
+        }
+    }
+}
+
+
+#define CHECK_RC(nRetVal, what)					    \
+if (nRetVal != XN_STATUS_OK)				    \
+{								    \
+printf("%s failed: %s\n", what, xnGetStatusString(nRetVal));    \
+return nRetVal;						    \
+}
+
+
+int Skinning::initialize_kinect()
+{
+    printf("Initialize_Kinect.\n");
+    XnStatus nRetVal = XN_STATUS_OK;
+    xn::EnumerationErrors errors;
+    
+    const char *fn = NULL;
+    if    (fileExists(SAMPLE_XML_PATH)) fn = SAMPLE_XML_PATH;
+    else if (fileExists(SAMPLE_XML_PATH_LOCAL)) fn = SAMPLE_XML_PATH_LOCAL;
+    else {
+        printf("Could not find '%s' nor '%s'. Aborting.\n" , SAMPLE_XML_PATH, SAMPLE_XML_PATH_LOCAL);
+        return XN_STATUS_ERROR;
+    }
+    printf("Reading config from: '%s'\n", fn);
+    
+    nRetVal = g_Context.InitFromXmlFile(fn, g_scriptNode, &errors);
+    if (nRetVal == XN_STATUS_NO_NODE_PRESENT)
+    {
+        XnChar strError[1024];
+        errors.ToString(strError, 1024);
+        printf("%s\n", strError);
+        return (nRetVal);
+    }
+    else if (nRetVal != XN_STATUS_OK)
+    {
+        printf("Open failed: %s\n", xnGetStatusString(nRetVal));
+        return (nRetVal);
+    }
+    
+    nRetVal = g_Context.FindExistingNode(XN_NODE_TYPE_USER, g_UserGenerator);
+    if (nRetVal != XN_STATUS_OK)
+    {
+        nRetVal = g_UserGenerator.Create(g_Context);
+        CHECK_RC(nRetVal, "Find user generator");
+    }
+    
+    XnCallbackHandle hUserCallbacks, hCalibrationStart, hCalibrationComplete, hPoseDetected;
+    if (!g_UserGenerator.IsCapabilitySupported(XN_CAPABILITY_SKELETON))
+    {
+        printf("Supplied user generator doesn't support skeleton\n");
+        return 1;
+    }
+    nRetVal = g_UserGenerator.RegisterUserCallbacks(User_NewUser, User_LostUser, NULL, hUserCallbacks);
+    CHECK_RC(nRetVal, "Register to user callbacks");
+    nRetVal = g_UserGenerator.GetSkeletonCap().RegisterToCalibrationStart(UserCalibration_CalibrationStart, NULL, hCalibrationStart);
+    CHECK_RC(nRetVal, "Register to calibration start");
+    nRetVal = g_UserGenerator.GetSkeletonCap().RegisterToCalibrationComplete(UserCalibration_CalibrationComplete, NULL, hCalibrationComplete);
+    CHECK_RC(nRetVal, "Register to calibration complete");
+    
+    if (g_UserGenerator.GetSkeletonCap().NeedPoseForCalibration())
+    {
+        g_bNeedPose = TRUE;
+        if (!g_UserGenerator.IsCapabilitySupported(XN_CAPABILITY_POSE_DETECTION))
+        {
+            printf("Pose required, but not supported\n");
+            return 1;
+        }
+        nRetVal = g_UserGenerator.GetPoseDetectionCap().RegisterToPoseDetected(UserPose_PoseDetected, NULL, hPoseDetected);
+        CHECK_RC(nRetVal, "Register to Pose Detected");
+        g_UserGenerator.GetSkeletonCap().GetCalibrationPose(g_strPose);
+    }
+    
+    g_UserGenerator.GetSkeletonCap().SetSkeletonProfile(XN_SKEL_PROFILE_ALL);
+    
+    nRetVal = g_Context.StartGeneratingAll();
+    CHECK_RC(nRetVal, "StartGenerating");
+    
+    return 0;
+}
+
 void Skinning::initialize_anttweakbar()
 {
-  using namespace igl::anttweakbar;
+    using namespace igl::anttweakbar;
   draw_anttweakbar = true;
   // Initialize anttweakbar library
   TwInit(TW_OPENGL, NULL);
@@ -1296,6 +1480,83 @@ void Skinning::add_PBS_group()
 #endif
 }
 
+void Skinning::update_kinect()
+{
+    XnUserID aUsers[MAX_NUM_USERS];
+    XnUInt16 nUsers;
+    XnSkeletonJointTransformation torsoJoint;
+    
+    if(g_bNeedPose)
+    {
+        printf("Assume calibration pose\n");
+    }
+    
+        g_Context.WaitOneUpdateAll(g_UserGenerator);
+        // print the torso information for the first user already tracking
+        nUsers=MAX_NUM_USERS;
+        g_UserGenerator.GetUsers(aUsers, nUsers);
+        for(XnUInt16 i=0; i<nUsers; i++)
+        {
+            if(g_UserGenerator.GetSkeletonCap().IsTracking(aUsers[i])==FALSE)
+            {
+                kinect_mode = false;
+                continue;
+            }
+            
+            kinect_mode = true;
+            
+            g_UserGenerator.GetSkeletonCap().GetSkeletonJoint(aUsers[i],XN_SKEL_TORSO,torsoJoint);
+            printf("user %d: head at (%6.2f,%6.2f,%6.2f)\n",aUsers[i],
+                   torsoJoint.position.position.X,
+                   torsoJoint.position.position.Y,
+                   torsoJoint.position.position.Z);
+        }
+}
+
+MatrixXf Skinning::update_kinect_position(XnSkeletonJoint eJoint)
+{
+    Matrix<float,3,1> result;
+    
+    printf("Run Update\n");
+    
+    XnUserID aUsers[MAX_NUM_USERS];
+    XnUInt16 nUsers;
+    XnSkeletonJointTransformation torsoJoint;
+    
+    //    printf("Starting to run\n");
+    
+    //    printf("update Kinect");
+    if(g_bNeedPose)
+    {
+        printf("Assume calibration pose\n");
+    }
+    
+    g_Context.WaitOneUpdateAll(g_UserGenerator);
+    // print the torso information for the first user already tracking
+    nUsers=MAX_NUM_USERS;
+    g_UserGenerator.GetUsers(aUsers, nUsers);
+    
+        if(g_UserGenerator.GetSkeletonCap().IsTracking(aUsers[0])==FALSE)
+        {
+            kinect_mode = false;
+            return result;
+        }
+        
+        kinect_mode = true;
+        
+        g_UserGenerator.GetSkeletonCap().GetSkeletonJoint(aUsers[0],eJoint,torsoJoint);
+        printf("user[%d] %d: head at (%6.2f,%6.2f,%6.2f)\n",0, aUsers[0],
+               torsoJoint.position.position.X,
+               torsoJoint.position.position.Y,
+               torsoJoint.position.position.Z);
+    
+    result(0) = torsoJoint.position.position.X;
+    result(1) = torsoJoint.position.position.Y;
+    result(2) = torsoJoint.position.position.Z;
+    
+    return result;
+}
+
 void Skinning::display()
 {
   /////////////////////////////////////////////////////////////////////////////
@@ -1367,6 +1628,10 @@ void Skinning::display()
 #  endif
   }
 #endif
+    
+    
+  //Kinect
+    update_kinect();
 
   /////////////////////////////////////////////////////////////////////////////
   // DISPLAY
@@ -1377,13 +1642,24 @@ void Skinning::display()
   {
     clear();
   }
-   
+    
     glDisable(GL_LIGHTING);
     glBegin(GL_TRIANGLES);
-    glColor4f(1.0f,0.0f,0.0f,1.0f);
-    glVertex3f(0.5,0,0.0);
-    glVertex3f(0,0.5,0.0);
-    glVertex3f(0,0,0.5);
+    
+
+    
+    if(!kinect_mode)
+        glColor4f(1.0f,0.0f,0.0f,1.0f);
+    else
+        glColor4f(0.0f,1.0f,0.0f,1.0f);
+    
+    glVertex2f(-2.0f, 0.8f);
+    glVertex2f(-1.8f, 0.8f);
+    glVertex2f(-1.9f, 1.0f);
+//    glVertex3f(-0.5f,0,0.0);
+//    glVertex3f(0.5f,0.0,0.0);
+//    glVertex3f(0,1.0f,0.0f);
+    
     glEnd();
     glEnable(GL_LIGHTING);
 
@@ -1742,7 +2018,7 @@ printf("Draw time = %fms\n", (sec_end - sec_start)*1000.0 / numReps);
   /////////////////////////////////////////////////////////////////////////////
   // Display is now up-to-date
   damage = false;
-  // But we force to up date again if we're animating a spin
+  // But we force up date again if we're animating a spin
   damage = spinning_about_up_axis;
   display_count++;
   if(display_count == frames_per_lap)
@@ -1774,7 +2050,7 @@ printf("Draw time = %fms\n", (sec_end - sec_start)*1000.0 / numReps);
     display_count = 0;
   }
     
-    std::cout<<"&&&&&&&&&&&&&&&&&Draw Circle"<<std::endl;
+//    std::cout<<"&&&&&&&&&&&&&&&&&Draw Circle"<<std::endl;
     
 //    glColor3f(1.0,0.0,0.0);
 //    glClearColor(1.0, 0, 0, 1.0);
@@ -3097,6 +3373,36 @@ bool Skinning::transformations()
             buff *= -1;
         }
         
+        
+        
+        MatrixXf joint_position = update_kinect_position(XN_SKEL_TORSO);
+        
+        if(!kinect_position_track)
+        {
+            kinect_position_track = true;
+            for(int i = 0; i < 3; i++)
+            {
+                kinect_characterP(i) = B_eq(3*0+i);
+                kinect_originalP(i) = joint_position(i);
+            }
+        }
+        
+        printf("user[0] 1: head at (%6.2f,%6.2f,%6.2f)\n",
+               joint_position(0),
+               joint_position(1),
+               joint_position(2));
+        
+        
+        for(int i =0; i < 3; i++)
+        {
+            B_eq(3*0+i) = joint_position(i) * 0.02 - 0.02 * kinect_originalP(i) + 1.02 * kinect_characterP(i);
+        }
+        
+//        B_eq(3*0+0) = (joint_position(0)-kinect_error(0)) * 0.02;
+//        B_eq(3*0+1) = (joint_position(1)-kinect_error(1)) * 0.02;
+//        B_eq(3*0+2) = (joint_position(2)-kinect_error(2)) * 0.02;
+        
+        
 //        B_eq(3*1+0) -= cos(time_degree) * 10;
 //        B_eq(3*1+1) -= sin(time_degree) * 10;
 //        
@@ -3109,15 +3415,15 @@ bool Skinning::transformations()
 //        B_eq(3*4+0) += cos(time_degree) * 10;
 //        B_eq(3*4+1) -= sin(time_degree) * 10;
         
-        int num_pc = B_eq.rows();
-        B_eq.conservativeResize(num_pc + 3);
+//        int num_pc = B_eq.rows();
+//        B_eq.conservativeResize(num_pc + 3);
         
 //        B_eq(num_pc) = cos(time_degree) * V.rows() * 0.5;
 //        B_eq(num_pc+1) = (0.57 + sin(time_degree) * 0.5)* V.rows();
         
-        B_eq(num_pc) = 0 * V.rows() * 0.5;
-        B_eq(num_pc+1) = 0.57 * V.rows();
-        B_eq(num_pc+2) = -1 * V.rows();
+//        B_eq(num_pc) = 0 * V.rows() * 0.5;
+//        B_eq(num_pc+1) = 0.57 * V.rows();
+//        B_eq(num_pc+2) = -1 * V.rows();
         
         bool update_success = arap_dof_update(arap_dof,B_eq,L0,max_iters,tol,L);
         
@@ -3893,18 +4199,18 @@ bool Skinning::reinitialize_auto_dof()
   SparseMatrix<double> A_eq, A_fix_eq, A_center_eq;
   gather_positional_constraints_system(skel->roots,m,dim,A_eq);
   gather_fixed_constraints_system(fixed_dim, dim, m, A_fix_eq);
-  gather_barycenter_constraints_system(M, V.rows(), m, dim, A_center_eq);
+//  gather_barycenter_constraints_system(M, V.rows(), m, dim, A_center_eq);
     
     cout<<"A_eq: "<<A_eq.rows()<<" * "<<A_eq.cols()<<endl;
     cout<<"A_fix_eq: "<<A_fix_eq.rows()<<" * "<<A_fix_eq.cols()<<endl;
-    cout<<"A_center_eq: "<<A_center_eq.rows()<<" * "<<A_center_eq.cols()<<endl;
+//    cout<<"A_center_eq: "<<A_center_eq.rows()<<" * "<<A_center_eq.cols()<<endl;
 //    cout<<"A_center_eq: "<<A_center_eq<<endl;
 
   SparseMatrix<double> A_eq_merged_part, A_eq_merged;
     
 //    join_constraints_systems(A_eq, A_fix_eq, A_eq_merged);
-  join_constraints_systems(A_eq, A_fix_eq, A_eq_merged_part);
-  join_constraints_systems(A_eq_merged_part, A_center_eq, A_eq_merged);
+  join_constraints_systems(A_eq, A_fix_eq, A_eq_merged);
+//  join_constraints_systems(A_eq_merged_part, A_center_eq, A_eq_merged);
     
     cout<<"A_eq_merged: "<<A_eq_merged.rows()<<endl;
 #ifdef EXTREME_VERBOSE
@@ -4029,6 +4335,14 @@ bool Skinning::stop_animating()
   // animation better be stopped
   assert(animating == false);
   return animating;
+}
+
+void Skinning::release_kinect()
+{
+    g_scriptNode.Release();
+    g_UserGenerator.Release();
+    g_Context.Release();
+    printf("Release Kinect\n");
 }
 
 #ifndef NO_PUPPET

@@ -70,7 +70,7 @@ typedef Eigen::MatrixXd LbsMatrixType;
     #include <AntTweakBar.h>
 #endif
 
-#include "ofxOpenNI.h"
+#include <XnCppWrapper.h>
 
 class Skinning
 {
@@ -78,6 +78,17 @@ class Skinning
   // Public fields
   ///////////////////////////////////////////////////////////////////////////
   public:
+    ///////////////////////////////////////////////////////////////////////////
+    // Kinect
+    ///////////////////////////////////////////////////////////////////////////
+    
+//    xn::Context g_Context;
+//    xn::ScriptNode g_scriptNode;
+//    xn::UserGenerator g_UserGenerator;
+//    
+//    XnBool g_bNeedPose;
+//    XnChar g_strPose[20];
+    
     /////////////////////////////////////////////////////////////////////////
     // Mesh
     /////////////////////////////////////////////////////////////////////////
@@ -370,13 +381,6 @@ class Skinning
 #endif
     
     ///////////////////////////////////////////////////////////////////////////
-    // Kinect
-    ///////////////////////////////////////////////////////////////////////////
-
-    ofxOpenNI kinect;
-    bool mode;
-
-  ///////////////////////////////////////////////////////////////////////////
   // Public Functions
   ///////////////////////////////////////////////////////////////////////////
   public:
@@ -406,6 +410,14 @@ class Skinning
     void initialize_display();
     // Initialize "UI" via (Re)AntTweakBar
     void initialize_anttweakbar();
+    //Initialize parameters regarding kinect
+    void preinitialize_kinect();
+    int initialize_kinect();
+    //Update Kinect
+    void update_kinect();
+    Eigen::MatrixXf update_kinect_position(XnSkeletonJoint eJoint);
+    //Release Kinect
+    void release_kinect();
     // Add anttweakbar variables related to info
     void add_info_anttweakbar_group();
     // Add anttweakbar variables related to 3D View
