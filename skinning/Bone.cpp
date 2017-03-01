@@ -9,6 +9,7 @@
 #include <igl/opengl2/view_axis.h>
 #include <igl/opengl2/up_axis.h>
 #include <igl/opengl2/right_axis.h>
+#  include <GLUT/glut.h>
 
 #include "Bone.h"
 #include "Skeleton.h"
@@ -524,8 +525,27 @@ void Bone::draw()
     // Draw parent's tip again to make sure it shows up on top
     this->parent->draw_tip();
   }
+    Vec3 d = tip_as_drawn();
+//    Vec3 s = tail_as_drawn();
+    
+    if(wi >= 0){
+        glDisable(GL_LIGHTING);
+        std::string s = std::to_string(wi);
+        char const *bone_index = s.c_str();
+        glRasterPos3f(d[0], d[1], d[2]);
+        int len = (int) strlen(bone_index);
+        //loop to display character by character
+        for (int i = 0; i < len; i++)
+        {
+            glColor3d(1.0, 0.0, 0.0);
+            glutBitmapCharacter(GLUT_BITMAP_TIMES_ROMAN_24,bone_index[i]);
+        }
+        glEnable(GL_LIGHTING);
+    }
 
   this->draw_tip();
+    
+  
 
   // If user is dragging out a rotation then draw a red line from the mouse
   // down location to the current mouse location
@@ -545,6 +565,21 @@ void Bone::draw_tip() const
     tip_color(pcolor);
     glColor3d(pcolor[0],pcolor[1],pcolor[2]);
     igl::opengl2::draw_point(d[0],d[1],d[2],BONE_POINT_RADIUS,is_tip_selected);
+      
+//      if(wi >= 0){
+//          glDisable(GL_LIGHTING);
+//          std::string s = std::to_string(wi);
+//          char const *bone_index = s.c_str();
+//          glRasterPos3f(d[0], d[1], d[2]);
+//          int len = (int) strlen(bone_index);
+//          //loop to display character by character
+//          for (int i = 0; i < len; i++)
+//          {
+//              glColor3d(1.0, 0.0, 0.0);
+//              glutBitmapCharacter(GLUT_BITMAP_TIMES_ROMAN_24,bone_index[i]);
+//          }
+//          glEnable(GL_LIGHTING);
+//      }
   }
 }
 
@@ -718,8 +753,7 @@ Vec3 Bone::tail(const bool according_to_last_T) const
   }
 }
 
-Vec3 Bone::tail_as_drawn() const
-{
+Vec3 Bone::tail_as_drawn() const{
   if(skel->draw_connected_to_parent)
   {
     return parent->tip_as_drawn();

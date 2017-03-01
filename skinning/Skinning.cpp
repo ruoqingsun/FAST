@@ -10,6 +10,8 @@ using namespace SkinningCallback;
 #include <cmath>
 #include <algorithm>
 #include <iomanip>
+#include <stdlib.h>
+#include <stdio.h>
 
 // System library
 // For making directories
@@ -1552,7 +1554,7 @@ MatrixXf Skinning::update_kinect_position(XnSkeletonJoint eJoint)
     
     result(0) = torsoJoint.position.position.X;
     result(1) = torsoJoint.position.position.Y;
-    result(2) = torsoJoint.position.position.Z;
+    result(2) = 0 - torsoJoint.position.position.Z;
     
     return result;
 }
@@ -1643,10 +1645,10 @@ void Skinning::display()
     clear();
   }
     
+    //Draw for Kinect sign
+    
     glDisable(GL_LIGHTING);
     glBegin(GL_TRIANGLES);
-    
-
     
     if(!kinect_mode)
         glColor4f(1.0f,0.0f,0.0f,1.0f);
@@ -1656,9 +1658,6 @@ void Skinning::display()
     glVertex2f(-2.0f, 0.8f);
     glVertex2f(-1.8f, 0.8f);
     glVertex2f(-1.9f, 1.0f);
-//    glVertex3f(-0.5f,0,0.0);
-//    glVertex3f(0.5f,0.0,0.0);
-//    glVertex3f(0,1.0f,0.0f);
     
     glEnd();
     glEnable(GL_LIGHTING);
@@ -3377,25 +3376,30 @@ bool Skinning::transformations()
         
         MatrixXf joint_position = update_kinect_position(XN_SKEL_TORSO);
         
-        if(!kinect_position_track)
+        if(joint_position(0)!=0 || joint_position(1)!=0 || joint_position(2)!=0)
         {
-            kinect_position_track = true;
-            for(int i = 0; i < 3; i++)
+            if(!kinect_position_track)
             {
-                kinect_characterP(i) = B_eq(3*0+i);
-                kinect_originalP(i) = joint_position(i);
+                kinect_position_track = true;
+                for(int i = 0; i < 3; i++)
+                {
+                    kinect_characterP(i) = B_eq(3*0+i);
+                    kinect_originalP(i) = joint_position(i);
+                }
             }
-        }
-        
-        printf("user[0] 1: head at (%6.2f,%6.2f,%6.2f)\n",
-               joint_position(0),
-               joint_position(1),
-               joint_position(2));
-        
-        
-        for(int i =0; i < 3; i++)
-        {
-            B_eq(3*0+i) = joint_position(i) * 0.02 - 0.02 * kinect_originalP(i) + 1.02 * kinect_characterP(i);
+            
+            printf("user[0] 1: head at (%6.2f,%6.2f,%6.2f)\n",
+                   joint_position(0),
+                   joint_position(1),
+                   joint_position(2));
+            
+            float proportion = 0.04;
+            
+            for(int i =0; i < 3; i++)
+            {
+                B_eq(3*0+i) = joint_position(i) * proportion - proportion * kinect_originalP(i) + (1+proportion) * kinect_characterP(i);
+            }
+            
         }
         
 //        B_eq(3*0+0) = (joint_position(0)-kinect_error(0)) * 0.02;
