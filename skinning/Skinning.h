@@ -367,7 +367,19 @@ class Skinning
     float floor_depth;
     // global animation time increased by 33ms each frame (i.e. assuming 30FPS playback)
     float anim_timer;
-
+    
+    /////////////////////////////////////////////////////////////////////////
+    // Registration fields
+    /////////////////////////////////////////////////////////////////////////
+    bool register_pose;
+    bool in_registration;
+    bool file_animation;
+    bool load_pose;// Temporary function
+    std::ofstream T_file;
+    std::ofstream K_file;
+    std::ifstream In_T_file;
+    std::ifstream In_K_file;
+    
 #ifndef NO_PUPPET
     /////////////////////////////////////////////////////////////////////////
     // Puppet Fields
@@ -435,6 +447,7 @@ class Skinning
     // Add anttweakbar puppet group
     void add_puppet_group();
     // Set TweakBar to read only
+    void add_registration_group();
     // Inputs:
     //   name  name of tw bar variable
     //   v  bool whether readonly or not
@@ -468,6 +481,11 @@ class Skinning
     // green --> editing bones 
     // yellow foreground --> bypassing autodof
     //
+    
+    //Functions for registration
+    bool extract_register_positions();
+    bool extract_kinect_positions();
+    
     void set_anttweakbar_colors();
     ///////////////////////////////////////////////////////////////////////////
     // Mouse/Keyboard interaction
