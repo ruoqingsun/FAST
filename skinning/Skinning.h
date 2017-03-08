@@ -379,6 +379,8 @@ class Skinning
     std::ofstream K_file;
     std::ifstream In_T_file;
     std::ifstream In_K_file;
+    std::vector<Eigen::MatrixXf> In_T;
+    std::vector<Eigen::MatrixXf> In_K;
     
 #ifndef NO_PUPPET
     /////////////////////////////////////////////////////////////////////////
@@ -485,6 +487,8 @@ class Skinning
     //Functions for registration
     bool extract_register_positions();
     bool extract_kinect_positions();
+    bool read_register_positions();
+    bool read_kinect_positions();
     
     void set_anttweakbar_colors();
     ///////////////////////////////////////////////////////////////////////////
