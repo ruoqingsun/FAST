@@ -287,6 +287,8 @@ bool kinect_mode;
 bool kinect_position_track;
 Matrix<float,3,1> kinect_characterP;
 Matrix<float,3,1> kinect_originalP;
+float a;
+float a_buff;
 
 Skinning::Skinning():
 texture_id(0),
@@ -646,6 +648,8 @@ void Skinning::preinitialize_kinect()
     strcpy(g_strPose, "");
     kinect_mode = false;
     kinect_position_track = false;
+    a = 0;
+    a_buff = 0.1;
 }
 
 
@@ -3716,7 +3720,11 @@ bool Skinning::transformations()
     if(!register_pose && load_pose)
     {
         if(read_register_positions())
-            T = In_T.at(3);
+        {
+            T = (1-a) * In_T.at(3) + a * In_T.at(0);
+            a += a_buff;
+            if(a >= 1 || a <= 0) a_buff *= -1;
+        }
     }
     
     if(!dial_in_each_T)
