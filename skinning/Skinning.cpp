@@ -1544,7 +1544,7 @@ void Skinning::update_kinect()
         
         kinect_mode = true;
         
-        g_UserGenerator.GetSkeletonCap().GetSkeletonJoint(aUsers[i],XN_SKEL_TORSO,torsoJoint);
+//        g_UserGenerator.GetSkeletonCap().GetSkeletonJoint(aUsers[i],XN_SKEL_TORSO,torsoJoint);
 //        printf("user %d: head at (%6.2f,%6.2f,%6.2f)\n",aUsers[i],
 //               torsoJoint.position.position.X,
 //               torsoJoint.position.position.Y,
@@ -2260,7 +2260,7 @@ void Skinning::crowd()
 bool Skinning::extract_register_positions()
 {
     if(!T_file.is_open())
-        T_file.open(TFILE);
+        T_file.open(TFILE, std::ios_base::app);
     
     for(int i = 0; i < T.rows(); i++)
     {
@@ -2271,7 +2271,7 @@ bool Skinning::extract_register_positions()
         T_file << ";";
     }
     T_file << "\n";
-    cout<<"Extract a pose into file"<<endl;
+    cout<<"Extract a pose into file "<<TFILE<<endl;
     
     T_file.close();
     return true;
@@ -2280,7 +2280,7 @@ bool Skinning::extract_register_positions()
 bool Skinning::extract_kinect_positions()
 {
     if(!K_file.is_open())
-        K_file.open(TFILE);
+        K_file.open(KFILE, std::ios_base::app);
     
     XnSkeletonJoint joint_list[] = {
        XN_SKEL_TORSO, XN_SKEL_NECK, XN_SKEL_HEAD,
@@ -2308,7 +2308,13 @@ bool Skinning::extract_kinect_positions()
     nUsers=MAX_NUM_USERS;
     g_UserGenerator.GetUsers(aUsers, nUsers);
     
-    if(g_UserGenerator.GetSkeletonCap().IsTracking(aUsers[0])==FALSE)
+    int current_user = 0;
+    while(current_user<MAX_NUM_USERS && g_UserGenerator.GetSkeletonCap().IsTracking(aUsers[current_user])==FALSE)
+    {
+        current_user++;
+    }
+    
+    if(current_user >= MAX_NUM_USERS)
     {
         kinect_mode = false;
         return false;
@@ -2318,7 +2324,7 @@ bool Skinning::extract_kinect_positions()
     
     for(int i = 0; i < list_length; i++)
     {
-        g_UserGenerator.GetSkeletonCap().GetSkeletonJoint(aUsers[0],joint_list[i],torsoJoint);
+        g_UserGenerator.GetSkeletonCap().GetSkeletonJoint(aUsers[current_user],joint_list[i],torsoJoint);
         if(torsoJoint.position.position.X == 0 && torsoJoint.position.position.Y && torsoJoint.position.position.Z)
         {
             cout<<"Extract to K_file fail: position "<<joint_list[i]<<" cannot be extracted successfully\n";
@@ -2339,8 +2345,7 @@ bool Skinning::extract_kinect_positions()
         K_file << ";";
     }
     K_file << "\n";
-    cout<<"Extract the user pose from Kinect into K_file"<<endl;
-    
+    cout<<"Extract the user pose from Kinect into file"<<KFILE<<endl;
     K_file.close();
     
     return true;
@@ -2389,15 +2394,6 @@ bool Skinning::read_register_positions()
         }
         
         In_T.push_back(tempT);
-//        for(int i = 0; i < tempT.rows(); i++)
-//        {
-//            for(int j = 0; j < tempT.cols(); j++)
-//            {
-//                cout<<tempT(i, j)<<"\t";
-//            }
-//            cout<<";";
-//        }
-//        cout<<endl;
     }
     
     return true;
@@ -2405,6 +2401,51 @@ bool Skinning::read_register_positions()
 
 bool Skinning::read_kinect_positions()
 {
+    if(In_K.size()!=0)
+        return true;
+    
+    std::string line;
+    if(!In_K_file.is_open())
+        In_K_file.open(IN_KFILE);
+    
+    if(!In_K_file.is_open()){
+        cout<<"Cannot read the file "<<IN_KFILE<<endl;
+        return false;
+    }
+    
+    while(std::getline(In_K_file, line))
+    {
+        MatrixXf tempT;
+        tempT.resize(15, 3);
+        
+        std::vector<std::string> tokens;
+        std::size_t start = 0, end = 0;
+        while ((end = line.find(";", start)) != std::string::npos) {
+            tokens.push_back(line.substr(start, end - start));
+            start = end + 1;
+        }
+        tokens.push_back(line.substr(start));
+        int indexI = 0;
+        for (std::vector<std::string>::iterator it = tokens.begin() ; it != tokens.end(); ++it)
+        {
+            string coordinates = *it;
+            std::size_t start_it = 0, end_it = 0;
+            int indexJ = 0;
+            while ((end_it = coordinates.find("\t", start_it)) != std::string::npos) {
+                string value = coordinates.substr(start_it, end_it - start_it);
+                start_it = end_it + 1;
+                std::string::size_type sz;
+                tempT(indexI, indexJ) = std::stof (value,&sz);
+                indexJ++;
+            }
+            indexI++;
+        }
+        
+        cout<<tempT<<"\n***********\n";
+        
+        In_K.push_back(tempT);
+    }
+    
     return true;
 }
 
@@ -3711,20 +3752,29 @@ bool Skinning::transformations()
     if(register_pose && in_registration)
     {
         bool kinect_result = extract_kinect_positions();
-        if(kinect_result) {
-            bool register_result = extract_register_positions();
-            if(kinect_result && register_result) in_registration = false;
+        while(!kinect_result)
+        {
+            kinect_result = extract_kinect_positions();
         }
+        
+        bool register_result = extract_register_positions();
+        while(!register_result)
+        {
+            register_result = extract_register_positions();
+        }
+        
+        in_registration = false;
     }
     
     if(!register_pose && load_pose)
     {
         if(read_register_positions())
         {
-            T = (1-a) * In_T.at(3) + a * In_T.at(0);
+            T = (1-a) * In_T.at(1) + a * In_T.at(0);
             a += a_buff;
             if(a >= 1 || a <= 0) a_buff *= -1;
         }
+//        read_kinect_positions();
     }
     
     if(!dial_in_each_T)

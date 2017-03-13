@@ -381,6 +381,7 @@ class Skinning
     std::ifstream In_K_file;
     std::vector<Eigen::MatrixXf> In_T;
     std::vector<Eigen::MatrixXf> In_K;
+    std::vector<float> weight_vector;
     
 #ifndef NO_PUPPET
     /////////////////////////////////////////////////////////////////////////
