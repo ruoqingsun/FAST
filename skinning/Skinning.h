@@ -381,7 +381,8 @@ class Skinning
     std::ifstream In_K_file;
     std::vector<Eigen::MatrixXf> In_T;
     std::vector<Eigen::MatrixXf> In_K;
-    std::vector<float> weight_vector;
+    Eigen::MatrixXf weight_vector;
+    Eigen::MatrixXf kinect_inverse;
     
 #ifndef NO_PUPPET
     /////////////////////////////////////////////////////////////////////////
@@ -490,6 +491,9 @@ class Skinning
     bool extract_kinect_positions();
     bool read_register_positions();
     bool read_kinect_positions();
+    //Generate kinect_inverse
+    bool pre_compute_kinect_positions();
+    bool calculate_kinect_positions();
     
     void set_anttweakbar_colors();
     ///////////////////////////////////////////////////////////////////////////

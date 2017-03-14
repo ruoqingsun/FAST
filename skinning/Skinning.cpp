@@ -2449,6 +2449,122 @@ bool Skinning::read_kinect_positions()
     return true;
 }
 
+bool Skinning::pre_compute_kinect_positions()
+{
+    if(In_K.size()==0)
+        return false;
+    
+    if(kinect_inverse.rows()>0)
+        return true;
+    
+    cout<<"Precompute kinect inverse matrix\n";
+    
+    MatrixXf left_solver;
+    left_solver.resize(In_K.size()+1, In_K.size()+1);
+    
+    for(int i = 0; i < In_K.size(); i++)
+    {
+        MatrixXf Icol;
+        igl::columnize(In_K.at(i),3,2,Icol);
+        for(int j = 0; j < In_K.size(); j++)
+        {
+            //********************************Need to be columnized*******************************
+            MatrixXf Jcol;
+            igl::columnize(In_K.at(j),3,2,Jcol);
+            MatrixXf tempMatrix = Icol.transpose() * Jcol;
+            cout<<"tempMatrix: "<<tempMatrix<<"\n**********\n";
+            left_solver(i, j) = tempMatrix(0,0);
+        }
+    }
+    
+    for(int i = 0; i < In_K.size(); i++)
+    {
+        left_solver(In_K.size(), i) = 1;
+        left_solver(i, In_K.size()) = 1;
+    }
+    left_solver(In_K.size(), In_K.size()) = 0;
+    kinect_inverse = left_solver.inverse();
+    
+    return true;
+}
+
+bool Skinning::calculate_kinect_positions()
+{
+    XnSkeletonJoint joint_list[] = {
+        XN_SKEL_TORSO, XN_SKEL_NECK, XN_SKEL_HEAD,
+        XN_SKEL_LEFT_SHOULDER, XN_SKEL_LEFT_ELBOW, XN_SKEL_LEFT_HAND,
+        XN_SKEL_RIGHT_SHOULDER, XN_SKEL_RIGHT_ELBOW, XN_SKEL_RIGHT_HAND,
+        XN_SKEL_LEFT_HIP, XN_SKEL_LEFT_KNEE, XN_SKEL_LEFT_FOOT,
+        XN_SKEL_RIGHT_HIP, XN_SKEL_RIGHT_KNEE, XN_SKEL_RIGHT_FOOT
+    };
+    
+    int list_length = sizeof(joint_list)/sizeof(joint_list[0]);;
+    
+    MatrixXf result;
+    result.resize(list_length, 3);
+    
+    XnUserID aUsers[MAX_NUM_USERS];
+    XnUInt16 nUsers;
+    XnSkeletonJointTransformation torsoJoint;
+    
+    if(g_bNeedPose)
+    {
+        printf("Assume calibration pose\n");
+    }
+    g_Context.WaitOneUpdateAll(g_UserGenerator);
+    // print the torso information for the first user already tracking
+    nUsers=MAX_NUM_USERS;
+    g_UserGenerator.GetUsers(aUsers, nUsers);
+    
+    int current_user = 0;
+    while(current_user<MAX_NUM_USERS && g_UserGenerator.GetSkeletonCap().IsTracking(aUsers[current_user])==FALSE)
+    {
+        current_user++;
+    }
+    
+    if(current_user >= MAX_NUM_USERS)
+    {
+        kinect_mode = false;
+        return false;
+    }
+    
+    kinect_mode = true;
+    
+    for(int i = 0; i < list_length; i++)
+    {
+        g_UserGenerator.GetSkeletonCap().GetSkeletonJoint(aUsers[current_user],joint_list[i],torsoJoint);
+        if(torsoJoint.position.position.X == 0 && torsoJoint.position.position.Y && torsoJoint.position.position.Z)
+        {
+            cout<<"No complete pose generated: "<<joint_list[i]<<" cannot be extracted successfully\n";
+            return false;
+        }
+        
+        result(i, 0) = torsoJoint.position.position.X;
+        result(i, 1) = torsoJoint.position.position.Y;
+        result(i, 2) = torsoJoint.position.position.Z;
+    }
+    
+    MatrixXf Rcol;
+    igl::columnize(result, 3, 2, Rcol);
+    MatrixXf Ccol;
+    Ccol.resize(In_K.size() + 1, 1);
+    for(int i = 0; i < In_K.size(); i++)
+    {
+        MatrixXf Icol;
+        igl::columnize(In_K.at(i),3,2,Icol);
+        MatrixXf tempMatrix = Icol.transpose() * Rcol;
+        cout<<"tempMatrix: "<<tempMatrix<<"\n**********\n";
+        Ccol(i, 0) = tempMatrix(0,0);
+    }
+    Ccol(In_K.size(), 0) = 1;
+    weight_vector = kinect_inverse * Ccol;
+    weight_vector.conservativeResize(In_K.size(), 1);
+    cout<<"Ccol: "<<Ccol<<"\n**************\n";
+    cout<<"weight_vector: "<<weight_vector<<"\n**************\n";
+    
+    return true;
+}
+
 void Skinning::resize(const double width, const double height)
 {
     this->width = width;
@@ -2929,7 +3045,6 @@ bool Skinning::right_mouse_drag(
 //    return false;
     return true;
 }
-
 bool Skinning::mouse_scroll(
                             int mouse_x,
                             int mouse_y,
@@ -3768,13 +3883,24 @@ bool Skinning::transformations()
     
     if(!register_pose && load_pose)
     {
-        if(read_register_positions())
+        if(read_register_positions() && read_kinect_positions() && pre_compute_kinect_positions())
         {
-            T = (1-a) * In_T.at(1) + a * In_T.at(0);
-            a += a_buff;
-            if(a >= 1 || a <= 0) a_buff *= -1;
+//            T = (1-a) * In_T.at(1) + a * In_T.at(0);
+//            a += a_buff;
+//            if(a >= 1 || a <= 0) a_buff *= -1;
+//            cout<<kinect_inverse<<"\n**********\n";
+            bool check = false;
+            while(!check)
+                check = calculate_kinect_positions();
+            
+            for(int i = 0; i < weight_vector.size(); i++)
+            {
+                if(i==0)
+                    T = weight_vector(i, 0) * In_T.at(i);
+                else
+                    T += weight_vector(i, 0) * In_T.at(i);
+            }
         }
-//        read_kinect_positions();
     }
     
     if(!dial_in_each_T)
