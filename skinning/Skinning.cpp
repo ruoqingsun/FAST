@@ -151,9 +151,9 @@ using namespace SkinningCallback;
 
 //Kinect
 #include <XnCppWrapper.h>
-#define SAMPLE_XML_PATH "/Users/ruoqing/Downloads/OpenNI-master 2/Data/SamplesConfig.xml"
+#define SAMPLE_XML_PATH "/Users/ruoqing/Documents/GitHub/FAST/SamplesConfig.xml"
 #define SAMPLE_XML_PATH_LOCAL "SamplesConfig.xml"
-#define MAX_NUM_USERS 1
+#define MAX_NUM_USERS 2
 //Kinect(end)
 
 #define OPTIMIZE_INDEX_BUFFER
@@ -1695,6 +1695,35 @@ void Skinning::display()
     glVertex2f(-0.5f, -0.5f);
     glVertex2f(-0.3f, -0.3f);
     glVertex2f(-0.5f, -0.6f);
+    glEnd();
+    glEnable(GL_LIGHTING);
+    
+    //Draw slider
+    glDisable(GL_LIGHTING);
+    glColor3f(0,0,0);
+    glBegin(GL_QUADS);
+    
+    float x = 0.2f, y = 0.6f;
+    float slider_width = 0.3f;
+    float slider_height = 0.02f;
+    
+    for(int i = 0; i < weight_vector.size(); i++)
+    {
+        glColor3f(0,0,0);
+        glVertex2f(x,y);
+        glVertex2f(x + slider_width, y);
+        glVertex2f(x + slider_width, y + slider_height);
+        glVertex2f(x, y + slider_height);
+        
+        glColor3f(0,1,0);
+        float progress = weight_vector(i,0) / 1.0f;
+        glVertex2f(x,y);
+        glVertex2f(x + slider_width * progress, y);
+        glVertex2f(x + slider_width * progress, y + slider_height);
+        glVertex2f(x, y + slider_height);
+        
+        y-=0.03f;
+    }
     
     glEnd();
     glEnable(GL_LIGHTING);
@@ -2480,7 +2509,7 @@ bool Skinning::pre_compute_kinect_positions()
     for(int i = 0; i < In_K.size(); i++)
     {
         left_solver(In_K.size(), i) = 1;
-        left_solver(i, In_K.size()) = 1;
+        left_solver(i, In_K.size()) = -1;
     }
     left_solver(In_K.size(), In_K.size()) = 0;
     kinect_inverse = left_solver.inverse();
